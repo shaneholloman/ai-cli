@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Breaking Changes
+
+- Align image/video flags with AI SDK names: `--n`, image `--images` / `--mask`, video `--frame-images` / `--input-references`. Remove `--count`, image `--image`, `--quality`, `--style`, and the unreleased `--start-frame` / `--end-frame` aliases. Provider-specific settings now use `--provider-options` JSON.
+- Image/video JSON now contains all artifacts and SDK diagnostics in per-model results with `elapsedMs`. Multiple media outputs always save to separate files. Image API discovery failures require an explicit API selection. Video defaults to SDK polling with a 600-second timeout.
+
+### New Features
+
+- Upgrade AI SDK to 7.0.123 and Gateway to 4.0.101. Expose native batching, seeds, retries, headers, Gateway routing/connection settings, masks, frame roles (including last-frame-only), references, FPS, audio and polling/download controls.
+- Add `video start` / `video status` with persisted operations, webhook URLs and optional downloads. Expose language-image settings and provider tools, preserving all generated images and accompanying text.
+
+### Improvements
+
+- Restore “Generate anything from your terminal” as the headline in the landing page, social preview, CLI help, and package description.
+
+### Bug Fixes
+
+- Preserve native model capabilities, image call diagnostics, usage, warnings, provider metadata and all output media types. Report structured failures even in quiet mode; validate numeric inputs before requests and preserve zero seeds despite the current Gateway serialization bug.
+- Reject malformed model catalogs during automatic image API selection and associate batched video outputs with their own call's response ID.
+- Require an explicit image API when the catalog omits the selected model. Save successful image/video batches and status downloads after a sibling failure, and report short output counts as incomplete while keeping returned media.
+- Keep successful video URL downloads when another URL in the same call fails, make URL downloads work in the published Node CLI, and sum reported Gateway cost fields across completed video batches.
+- Resolve short language model names for explicit image `generateText` calls and infer saved video formats from generic status downloads. Clarify exit codes when a partial media result was saved.
+- Keep automatic `generateText` routing for Quiver Arrow 2 SVG models when the Gateway image catalog omits them.
+
 ## 0.5.2
 
 <!-- release:start -->

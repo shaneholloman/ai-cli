@@ -52,6 +52,7 @@ export interface ModelPricing {
 }
 
 export interface ModelEntry {
+  [key: string]: unknown;
   id: string;
   name?: string;
   description?: string;
@@ -65,6 +66,7 @@ export interface ModelEntry {
 }
 
 export interface GatewayModels {
+  available: boolean;
   text: ModelEntry[];
   image: ModelEntry[];
   video: ModelEntry[];
@@ -80,6 +82,7 @@ export interface GatewayModels {
 }
 
 interface RawGatewayModel {
+  [key: string]: unknown;
   id: string;
   name?: string;
   description?: string;
@@ -96,7 +99,41 @@ interface RawGatewayModel {
 
 let cached: Promise<GatewayModels> | null = null;
 
-export function fetchGatewayModels(): Promise<GatewayModels> {
+function emptyGatewayModels(): GatewayModels {
+  return {
+    available: false,
+    text: [],
+    image: [],
+    video: [],
+    speech: [],
+    transcription: [],
+    evaluation: [],
+    all: [],
+    lookup: [],
+    languageImageModelIds: new Set(),
+  };
+}
+
+function isRawGatewayModel(value: unknown): value is RawGatewayModel {
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    return false;
+  const model = value as Record<string, unknown>;
+  return (
+    typeof model.id === "string" &&
+    model.id.length > 0 &&
+    typeof model.type === "string" &&
+    (model.owned_by == null || typeof model.owned_by === "string") &&
+    (model.tags == null ||
+      (Array.isArray(model.tags) &&
+        model.tags.every((tag) => typeof tag === "string")))
+  );
+}
+
+export function fetchGatewayModels(options?: {
+  baseURL?: string;
+  headers?: Record<string, string>;
+}): Promise<GatewayModels> {
+  if (options) return doFetch(options);
   if (!cached) {
     cached = doFetch().catch((err) => {
       cached = null;
@@ -110,26 +147,33 @@ export function resetGatewayCache(): void {
   cached = null;
 }
 
-async function doFetch(): Promise<GatewayModels> {
-  const result: GatewayModels = {
-    text: [],
-    image: [],
-    video: [],
-    speech: [],
-    transcription: [],
-    evaluation: [],
-    all: [],
-    lookup: [],
-    languageImageModelIds: new Set(),
-  };
+async function doFetch(options?: {
+  baseURL?: string;
+  headers?: Record<string, string>;
+}): Promise<GatewayModels> {
+  const result = emptyGatewayModels();
 
   try {
-    const res = await fetch(GATEWAY_MODELS_URL, {
-      signal: AbortSignal.timeout(GATEWAY_TIMEOUT_MS),
-    });
+    const res = await fetch(
+      options?.baseURL
+        ? new URL("/v1/models", options.baseURL)
+        : GATEWAY_MODELS_URL,
+      {
+        headers: options?.headers,
+        signal: AbortSignal.timeout(GATEWAY_TIMEOUT_MS),
+      }
+    );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = (await res.json()) as { data?: RawGatewayModel[] };
-    const models = json.data ?? [];
+    const json: unknown = await res.json();
+    if (
+      json === null ||
+      typeof json !== "object" ||
+      !("data" in json) ||
+      !Array.isArray(json.data) ||
+      !json.data.every(isRawGatewayModel)
+    )
+      throw new Error("Invalid AI Gateway model catalog");
+    const models: RawGatewayModel[] = json.data;
 
     const entryMap = new Map<string, ModelEntry>();
 
@@ -169,6 +213,7 @@ async function doFetch(): Promise<GatewayModels> {
       const pricing = normalizePricing(m.pricing);
 
       const entry: ModelEntry = {
+        ...m,
         id: m.id,
         name: m.name,
         description: m.description,
@@ -198,19 +243,26 @@ async function doFetch(): Promise<GatewayModels> {
 
     result.lookup = [...entryMap.values()];
     result.all = result.lookup.filter((e) => e.capabilities.length > 0);
+    result.available = true;
   } catch {
     cached = null;
     process.stderr.write("Warning: could not fetch models from AI Gateway\n");
+    return emptyGatewayModels();
   }
 
   return result;
 }
 
 export async function fetchModelEndpoints(
-  modelId: string
+  modelId: string,
+  options?: { baseURL?: string; headers?: Record<string, string> }
 ): Promise<ModelEndpointsInfo | null> {
   try {
-    const res = await fetch(`${GATEWAY_MODELS_URL}/${modelId}/endpoints`, {
+    const modelsUrl = options?.baseURL
+      ? new URL("/v1/models", options.baseURL).href
+      : GATEWAY_MODELS_URL;
+    const res = await fetch(`${modelsUrl}/${modelId}/endpoints`, {
+      headers: options?.headers,
       signal: AbortSignal.timeout(GATEWAY_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
